@@ -1,28 +1,21 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // Required for the new Input System
-using UnityEngine.Tilemaps;    // Required for interacting with Tilemaps
+using UnityEngine.InputSystem;
+using UnityEngine.Tilemaps;
 
 public class PlayerBlockInteraction : MonoBehaviour
 {
     public Camera mainCamera;
-    public Tilemap targetTilemap; // Assign your breakable Tilemap in the Inspector
-    public GameObject droppedItemPrefab; // Assign a simple "dropped item" prefab in the Inspector (optional for now)
-    public float interactionRange = 2f; // How far the player can reach to mine
+    public Tilemap targetTilemap; // Assign your breakable Tilemap
+    public float interactionRange = 2f;
+    // No longer need a generic droppedItemPrefab here, it's on the BreakableTile
 
     private PlayerInputActions playerInputActions;
 
     void Awake()
     {
         playerInputActions = new PlayerInputActions();
-
-        if (mainCamera == null)
-        {
-            mainCamera = Camera.main; // Fallback to find the main camera
-        }
-        if (targetTilemap == null)
-        {
-            Debug.LogError("Target Tilemap not assigned in PlayerBlockInteraction!");
-        }
+        if (mainCamera == null) mainCamera = Camera.main;
+        if (targetTilemap == null) Debug.LogError("Target Tilemap not assigned in PlayerBlockInteraction!");
     }
 
     private void OnEnable()
@@ -39,48 +32,60 @@ public class PlayerBlockInteraction : MonoBehaviour
 
     private void HandleMineAction()
     {
-        // Get mouse position in screen coordinates
         Vector2 mouseScreenPosition = Mouse.current.position.ReadValue();
-
-        // Convert screen position to world position
         Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(new Vector3(mouseScreenPosition.x, mouseScreenPosition.y, mainCamera.nearClipPlane));
-        // Ensure Z is appropriate for 2D interactions, usually 0 for tilemaps if camera is at -10
-        mouseWorldPosition.z = 0;
+        mouseWorldPosition.z = 0; // Ensure correct Z for 2D
 
-        // Check distance to player
         if (Vector2.Distance(transform.position, mouseWorldPosition) > interactionRange)
         {
-            // Debug.Log("Too far to mine!");
-            return; // Too far away
+            return; // Too far
         }
 
-        // Convert world position to Tilemap cell position
         Vector3Int cellPosition = targetTilemap.WorldToCell(mouseWorldPosition);
-
-        // Get the tile at that cell position
         TileBase tile = targetTilemap.GetTile(cellPosition);
 
-        if (tile != null) // If there's a tile at that position
+        if (tile != null)
         {
-            // --- Future: Add logic for tile health/durability if needed ---
+            // Try to cast the TileBase to your custom BreakableTile
+            BreakableTile breakableTile = tile as BreakableTile;
 
-            // Remove the tile from the Tilemap
-            targetTilemap.SetTile(cellPosition, null);
-            // Debug.Log($"Destroyed tile at {cellPosition}");
-
-            // --- Spawn a dropped item (optional) ---
-            if (droppedItemPrefab != null)
+            if (breakableTile != null)
             {
-                // Get the center of the cell in world coordinates to spawn the item
-                Vector3 cellCenterWorld = targetTilemap.GetCellCenterWorld(cellPosition);
-                Instantiate(droppedItemPrefab, cellCenterWorld, Quaternion.identity);
-            }
+                Debug.Log($"Attempting to break: {breakableTile.tileDisplayName}");
 
-            // --- Future: Play sound effect for breaking block ---
+                // --- Future: Implement durability/mining time check here ---
+                // For now, assume durability = 1 means instant break
+                // if (breakableTile.durability <= (some_damage_value_or_time_mined)) 
+
+                targetTilemap.SetTile(cellPosition, null); // Remove the tile
+
+                if (breakableTile.itemToDropPrefab != null)
+                {
+                    Vector3 cellCenterWorld = targetTilemap.GetCellCenterWorld(cellPosition);
+                    int dropAmount = Random.Range(breakableTile.minDropAmount, breakableTile.maxDropAmount + 1);
+                    for (int i = 0; i < dropAmount; i++)
+                    {
+                        // Add a small random offset to the drop position to avoid perfect stacking
+                        Vector3 spawnPosition = cellCenterWorld + new Vector3(Random.Range(-0.1f, 0.1f), Random.Range(-0.1f, 0.1f), 0);
+                        Instantiate(breakableTile.itemToDropPrefab, spawnPosition, Quaternion.identity);
+                    }
+                }
+
+                if (breakableTile.breakSound != null && GetComponent<AudioSource>()) // Assuming AudioSource on player
+                {
+                    GetComponent<AudioSource>().PlayOneShot(breakableTile.breakSound);
+                }
+            }
+            else
+            {
+                // If it's not a BreakableTile, maybe it's a different kind of tile or indestructible
+                // For now, we can choose to break it generically or do nothing
+                // Debug.Log("Tile is not a BreakableTile type. Destroying generically.");
+                // targetTilemap.SetTile(cellPosition, null); // Optionally break non-custom tiles too
+            }
         }
     }
 
-    // Visualize interaction range in editor
     void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.yellow;
