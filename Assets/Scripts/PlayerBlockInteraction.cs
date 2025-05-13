@@ -1,15 +1,19 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Tilemaps;
+using System.Collections.Generic; // Required for using Dictionary
 
 public class PlayerBlockInteraction : MonoBehaviour
 {
     public Camera mainCamera;
-    public Tilemap targetTilemap; // Assign your breakable Tilemap
+    public Tilemap targetTilemap;
     public float interactionRange = 2f;
-    // No longer need a generic droppedItemPrefab here, it's on the BreakableTile
+    public float hitDamage = 1f; // How much "damage" each hit does
+    public float timeBetweenHits = 0.25f; // Time in seconds between each hit while holding
 
     private PlayerInputActions playerInputActions;
+    private Dictionary<Vector3Int, float> tileDamageProgress = new Dictionary<Vector3Int, float>();
+    private float hitCooldownTimer = 0f;
 
     void Awake()
     {
@@ -21,16 +25,40 @@ public class PlayerBlockInteraction : MonoBehaviour
     private void OnEnable()
     {
         playerInputActions.Player.Enable();
-        playerInputActions.Player.Mine.performed += context => HandleMineAction();
+        // We are removing the subscription to playerInputActions.Player.Mine.performed
+        // as we will handle continuous mining in Update()
     }
 
     private void OnDisable()
     {
-        playerInputActions.Player.Mine.performed -= context => HandleMineAction();
         playerInputActions.Player.Disable();
+        // Also remove the unsubscription if you removed the subscription above
     }
 
-    private void HandleMineAction()
+    void Update()
+    {
+        // Decrease the cooldown timer
+        if (hitCooldownTimer > 0)
+        {
+            hitCooldownTimer -= Time.deltaTime;
+        }
+
+        // Check if the "Mine" button is currently being held down
+        if (playerInputActions.Player.Mine.IsPressed())
+        {
+            // If the cooldown is over, attempt to mine
+            if (hitCooldownTimer <= 0)
+            {
+                AttemptMineAtMousePosition();
+                hitCooldownTimer = timeBetweenHits; // Reset the cooldown
+            }
+        }
+        // Optional: If you want damage to reset on a tile if the player stops mining it
+        // before breaking it, you might need more logic here or when a new tile is targeted.
+        // For now, damage persists on each tile until it's broken.
+    }
+
+    void AttemptMineAtMousePosition()
     {
         Vector2 mouseScreenPosition = Mouse.current.position.ReadValue();
         Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(new Vector3(mouseScreenPosition.x, mouseScreenPosition.y, mainCamera.nearClipPlane));
@@ -38,52 +66,64 @@ public class PlayerBlockInteraction : MonoBehaviour
 
         if (Vector2.Distance(transform.position, mouseWorldPosition) > interactionRange)
         {
+            // Debug.Log("Too far to mine!");
             return; // Too far
         }
 
-        Vector3Int cellPosition = targetTilemap.WorldToCell(mouseWorldPosition);
-        TileBase tile = targetTilemap.GetTile(cellPosition);
+        Vector3Int currentCellPosition = targetTilemap.WorldToCell(mouseWorldPosition);
+        TileBase tile = targetTilemap.GetTile(currentCellPosition);
 
         if (tile != null)
         {
-            // Try to cast the TileBase to your custom BreakableTile
             BreakableTile breakableTile = tile as BreakableTile;
 
             if (breakableTile != null)
             {
-                Debug.Log($"Attempting to break: {breakableTile.tileDisplayName}");
-
-                // --- Future: Implement durability/mining time check here ---
-                // For now, assume durability = 1 means instant break
-                // if (breakableTile.durability <= (some_damage_value_or_time_mined)) 
-
-                targetTilemap.SetTile(cellPosition, null); // Remove the tile
-
-                if (breakableTile.itemToDropPrefab != null)
+                // Ensure the current cell is being tracked for damage, initialize if not
+                if (!tileDamageProgress.ContainsKey(currentCellPosition))
                 {
-                    Vector3 cellCenterWorld = targetTilemap.GetCellCenterWorld(cellPosition);
-                    int dropAmount = Random.Range(breakableTile.minDropAmount, breakableTile.maxDropAmount + 1);
-                    for (int i = 0; i < dropAmount; i++)
+                    tileDamageProgress[currentCellPosition] = 0f;
+                }
+
+                // Apply damage
+                tileDamageProgress[currentCellPosition] += hitDamage;
+
+                Debug.Log($"Hit '{breakableTile.tileDisplayName}' at {currentCellPosition}. Damage: {tileDamageProgress[currentCellPosition]}/{breakableTile.durability}");
+
+                // Check if the tile's durability is depleted
+                if (tileDamageProgress[currentCellPosition] >= breakableTile.durability)
+                {
+                    Debug.Log($"'{breakableTile.tileDisplayName}' at {currentCellPosition} broken!");
+                    targetTilemap.SetTile(currentCellPosition, null); // Remove the tile
+
+                    tileDamageProgress.Remove(currentCellPosition); // Remove from damage tracking
+
+                    if (breakableTile.itemToDropPrefab != null)
                     {
-                        // Add a small random offset to the drop position to avoid perfect stacking
-                        Vector3 spawnPosition = cellCenterWorld + new Vector3(Random.Range(-0.1f, 0.1f), Random.Range(-0.1f, 0.1f), 0);
-                        Instantiate(breakableTile.itemToDropPrefab, spawnPosition, Quaternion.identity);
+                        Vector3 cellCenterWorld = targetTilemap.GetCellCenterWorld(currentCellPosition);
+                        int dropAmount = Random.Range(breakableTile.minDropAmount, breakableTile.maxDropAmount + 1);
+                        for (int i = 0; i < dropAmount; i++)
+                        {
+                            Vector3 spawnPosition = cellCenterWorld + new Vector3(Random.Range(-0.1f, 0.1f), Random.Range(-0.1f, 0.1f), 0);
+                            Instantiate(breakableTile.itemToDropPrefab, spawnPosition, Quaternion.identity);
+                        }
+                    }
+
+                    if (breakableTile.breakSound != null && GetComponent<AudioSource>())
+                    {
+                        GetComponent<AudioSource>().PlayOneShot(breakableTile.breakSound);
                     }
                 }
-
-                if (breakableTile.breakSound != null && GetComponent<AudioSource>()) // Assuming AudioSource on player
+                else
                 {
-                    GetComponent<AudioSource>().PlayOneShot(breakableTile.breakSound);
+                    // Tile was hit but not broken yet
+                    // Future: Play a "hit" sound that's different from the break sound
+                    // Future: Show a crack visual on the tile
                 }
             }
-            else
-            {
-                // If it's not a BreakableTile, maybe it's a different kind of tile or indestructible
-                // For now, we can choose to break it generically or do nothing
-                // Debug.Log("Tile is not a BreakableTile type. Destroying generically.");
-                // targetTilemap.SetTile(cellPosition, null); // Optionally break non-custom tiles too
-            }
+            // else: Tile is not a "BreakableTile" type
         }
+        // else: Clicked on an empty cell, do nothing for continuous mining unless you want a "miss" sound
     }
 
     void OnDrawGizmosSelected()
