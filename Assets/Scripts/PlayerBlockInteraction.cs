@@ -58,16 +58,17 @@ public class PlayerBlockInteraction : MonoBehaviour
         // For now, damage persists on each tile until it's broken.
     }
 
+    // Inside PlayerBlockInteraction.cs
+
     void AttemptMineAtMousePosition()
     {
         Vector2 mouseScreenPosition = Mouse.current.position.ReadValue();
         Vector3 mouseWorldPosition = mainCamera.ScreenToWorldPoint(new Vector3(mouseScreenPosition.x, mouseScreenPosition.y, mainCamera.nearClipPlane));
-        mouseWorldPosition.z = 0; // Ensure correct Z for 2D
+        mouseWorldPosition.z = 0;
 
         if (Vector2.Distance(transform.position, mouseWorldPosition) > interactionRange)
         {
-            // Debug.Log("Too far to mine!");
-            return; // Too far
+            return; 
         }
 
         Vector3Int currentCellPosition = targetTilemap.WorldToCell(mouseWorldPosition);
@@ -79,24 +80,20 @@ public class PlayerBlockInteraction : MonoBehaviour
 
             if (breakableTile != null)
             {
-                // Ensure the current cell is being tracked for damage, initialize if not
                 if (!tileDamageProgress.ContainsKey(currentCellPosition))
                 {
                     tileDamageProgress[currentCellPosition] = 0f;
                 }
 
-                // Apply damage
                 tileDamageProgress[currentCellPosition] += hitDamage;
-
                 Debug.Log($"Hit '{breakableTile.tileDisplayName}' at {currentCellPosition}. Damage: {tileDamageProgress[currentCellPosition]}/{breakableTile.durability}");
 
-                // Check if the tile's durability is depleted
                 if (tileDamageProgress[currentCellPosition] >= breakableTile.durability)
                 {
+                    // Tile is broken
                     Debug.Log($"'{breakableTile.tileDisplayName}' at {currentCellPosition} broken!");
-                    targetTilemap.SetTile(currentCellPosition, null); // Remove the tile
-
-                    tileDamageProgress.Remove(currentCellPosition); // Remove from damage tracking
+                    targetTilemap.SetTile(currentCellPosition, null); 
+                    tileDamageProgress.Remove(currentCellPosition);
 
                     if (breakableTile.itemToDropPrefab != null)
                     {
@@ -109,6 +106,7 @@ public class PlayerBlockInteraction : MonoBehaviour
                         }
                     }
 
+                    // Play break sound
                     if (breakableTile.breakSound != null && GetComponent<AudioSource>())
                     {
                         GetComponent<AudioSource>().PlayOneShot(breakableTile.breakSound);
@@ -116,14 +114,15 @@ public class PlayerBlockInteraction : MonoBehaviour
                 }
                 else
                 {
-                    // Tile was hit but not broken yet
-                    // Future: Play a "hit" sound that's different from the break sound
-                    // Future: Show a crack visual on the tile
+                    // Tile was hit but not yet broken - Play hit sound
+                    if (breakableTile.hitSound != null && GetComponent<AudioSource>())
+                    {
+                        GetComponent<AudioSource>().PlayOneShot(breakableTile.hitSound);
+                    }
+                    // Future: Add visual feedback for damage (e.g., cracks)
                 }
             }
-            // else: Tile is not a "BreakableTile" type
         }
-        // else: Clicked on an empty cell, do nothing for continuous mining unless you want a "miss" sound
     }
 
     void OnDrawGizmosSelected()
