@@ -163,12 +163,12 @@ public class PlayerMovement : MonoBehaviour
         Gizmos.DrawWireSphere(groundCheckPoint.position, groundCheckRadius);
     }
 
-    void OnTriggerEnter2D(Collider2D other)
+    void OnCollisionEnter2D(Collision2D collision)
     {
-        if (other.gameObject.CompareTag("CollectibleItem"))
+        if (collision.gameObject.CompareTag("CollectibleItem"))
         {
-            Debug.Log("Collected an item!"); // Placeholder for adding to inventory
-            Destroy(other.gameObject); 
+            Debug.Log("Collected an item! (Collision)"); // Placeholder for adding to inventory
+            Destroy(collision.gameObject);
         }
     }
 }
