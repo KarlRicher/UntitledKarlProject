@@ -162,4 +162,15 @@ public class PlayerMovement : MonoBehaviour
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(groundCheckPoint.position, groundCheckRadius);
     }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.gameObject.CompareTag("CollectibleItem"))
+        {
+            Debug.Log("Collected an item!"); // Placeholder for adding to inventory
+            Destroy(other.gameObject); 
+        }
+    }
 }
+
+    
